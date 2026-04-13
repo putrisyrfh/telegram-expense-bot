@@ -1,5 +1,5 @@
 {
-  "name": "telegram-bot",
+  "name": "telegram-expense-bot",
   "version": "1.0.0",
   "main": "bot.js",
   "scripts": {
@@ -8,5 +8,8 @@
   "dependencies": {
     "googleapis": "^133.0.0",
     "node-telegram-bot-api": "^0.66.0"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }

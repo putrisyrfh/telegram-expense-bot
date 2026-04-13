@@ -1,0 +1,12 @@
+{
+  "name": "telegram-bot",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "googleapis": "^133.0.0",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}

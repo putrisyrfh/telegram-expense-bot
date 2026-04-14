@@ -38,7 +38,7 @@ Kirim expense ke sini, otomatis masuk Google Sheets!
 
 // ===== HELPERS =====
 
-// mapping dropdown EXACT
+// dropdown mapping (HARUS EXACT MATCH)
 function normalizePayer(name) {
   const n = name.toLowerCase();
 
@@ -50,15 +50,13 @@ function normalizePayer(name) {
   return 'Putri🐬';
 }
 
-// convert currency
-function convertToIDR(amount, currency) {
-  if (currency === 'USD') return Math.round(amount * 15500);
-  return amount;
-}
-
-// format date (BIAR SAMA KAYAK MANUAL)
+// DATE FORMAT → 14 Apr 26 (MATCH SHEET)
 function getFormattedDate() {
-  return new Date().toLocaleDateString('en-GB');
+  return new Date().toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: '2-digit'
+  }).replace(',', '');
 }
 
 // ===== PARSER (FORMAT LO — KEEP) =====
@@ -105,16 +103,15 @@ bot.on('message', async (msg) => {
     }
 
     const date = getFormattedDate();
-    const amountIDR = convertToIDR(data.amount, data.currency);
     const paidBy = normalizePayer(data.paidBy);
 
-    // split mapping
+    // SPLIT CHECKBOX
     const splitPutri = data.splitTo.includes('putri');
     const splitAyuA = data.splitTo.includes('ayu a');
     const splitKyne = data.splitTo.includes('kyne');
     const splitAyu = data.splitTo.includes('ayu');
 
-    // ===== FIX ROW POSITION =====
+    // ===== GET NEXT ROW (ANTI LONCAT) =====
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Spending Tracker!A:A',
@@ -122,25 +119,30 @@ bot.on('message', async (msg) => {
 
     const nextRow = (res.data.values || []).length + 1;
 
+    // ===== INSERT KE SHEET =====
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `Spending Tracker!A${nextRow}:M${nextRow}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [[
-          date,
-          data.item,
-          data.amount,
-          data.currency,
-          amountIDR,
-          paidBy,
-          splitPutri,
-          splitAyuA,
-          splitKyne,
-          splitAyu,
-          '',
-          '',
-          false
+          date,              // A Date
+          data.item,         // B Item
+          data.amount,       // C Price
+          data.currency,     // D Currency
+
+          null,              // E Amount IDR → BIAR FORMULA JALAN
+
+          paidBy,            // F Paid by (dropdown match)
+
+          splitPutri,        // G
+          splitAyuA,         // H
+          splitKyne,         // I
+          splitAyu,          // J
+
+          null,              // K Amount per person → BIAR FORMULA JALAN
+          '',                // L Category
+          false              // M Settled
         ]]
       }
     });

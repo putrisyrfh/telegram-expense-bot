@@ -6,7 +6,7 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ===== GOOGLE AUTH (BASE64) =====
+// ===== GOOGLE AUTH =====
 const credentials = JSON.parse(
   Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString()
 );
@@ -17,6 +17,9 @@ const auth = new google.auth.GoogleAuth({
 });
 
 const sheets = google.sheets({ version: 'v4', auth });
+
+// ===== STATE =====
+let lastInsertedRow = null;
 
 // ===== START (FORMAT LO — KEEP) =====
 bot.onText(/\/start/, (msg) => {
@@ -37,8 +40,6 @@ Kirim expense ke sini, otomatis masuk Google Sheets!
 });
 
 // ===== HELPERS =====
-
-// dropdown mapping (HARUS EXACT MATCH)
 function normalizePayer(name) {
   const n = name.toLowerCase();
 
@@ -50,7 +51,6 @@ function normalizePayer(name) {
   return 'Putri🐬';
 }
 
-// DATE FORMAT → 14 Apr 26 (MATCH SHEET)
 function getFormattedDate() {
   return new Date().toLocaleDateString('en-GB', {
     day: 'numeric',
@@ -59,7 +59,6 @@ function getFormattedDate() {
   }).replace(',', '');
 }
 
-// ===== PARSER (FORMAT LO — KEEP) =====
 function parseExpense(text) {
   text = text.toLowerCase().trim();
 
@@ -87,7 +86,49 @@ function parseExpense(text) {
   return { item, amount, currency, paidBy, splitTo };
 }
 
-// ===== MAIN =====
+function capitalize(str) {
+  return str.replace(/\b\w/g, l => l.toUpperCase());
+}
+
+// ===== INSERT FUNCTION (BIAR DIPAKE ULANG) =====
+async function insertOrUpdateRow(rowNumber, data) {
+  const date = getFormattedDate();
+  const paidBy = normalizePayer(data.paidBy);
+
+  const splitPutri = data.splitTo.includes('putri');
+  const splitAyuA = data.splitTo.includes('ayu a');
+  const splitKyne = data.splitTo.includes('kyne');
+  const splitAyu = data.splitTo.includes('ayu');
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `Spending Tracker!A${rowNumber}:M${rowNumber}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: {
+      values: [[
+        date,
+        data.item,
+        data.amount,
+        data.currency,
+
+        null,      // Amount IDR → formula
+
+        paidBy,
+
+        splitPutri,
+        splitAyuA,
+        splitKyne,
+        splitAyu,
+
+        null,      // Amount per person → formula
+        '',        // Category
+        false      // Settled
+      ]]
+    }
+  });
+}
+
+// ===== MAIN INPUT =====
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
@@ -102,52 +143,16 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    const date = getFormattedDate();
-    const paidBy = normalizePayer(data.paidBy);
-
-    // SPLIT CHECKBOX
-    const splitPutri = data.splitTo.includes('putri');
-    const splitAyuA = data.splitTo.includes('ayu a');
-    const splitKyne = data.splitTo.includes('kyne');
-    const splitAyu = data.splitTo.includes('ayu');
-
-    // ===== GET NEXT ROW (ANTI LONCAT) =====
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Spending Tracker!A:A',
     });
 
     const nextRow = (res.data.values || []).length + 1;
+    lastInsertedRow = nextRow;
 
-    // ===== INSERT KE SHEET =====
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `Spending Tracker!A${nextRow}:M${nextRow}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [[
-          date,              // A Date
-          data.item,         // B Item
-          data.amount,       // C Price
-          data.currency,     // D Currency
+    await insertOrUpdateRow(nextRow, data);
 
-          null,              // E Amount IDR → BIAR FORMULA JALAN
-
-          paidBy,            // F Paid by (dropdown match)
-
-          splitPutri,        // G
-          splitAyuA,         // H
-          splitKyne,         // I
-          splitAyu,          // J
-
-          null,              // K Amount per person → BIAR FORMULA JALAN
-          '',                // L Category
-          false              // M Settled
-        ]]
-      }
-    });
-
-    // ===== RESPONSE (FORMAT LO — KEEP) =====
     bot.sendMessage(chatId,
 `✅ Tercatat!
 
@@ -163,7 +168,62 @@ bot.on('message', async (msg) => {
   }
 });
 
-// ===== HELPER =====
-function capitalize(str) {
-  return str.replace(/\b\w/g, l => l.toUpperCase());
-}
+// ===== UNDO =====
+bot.onText(/\/undo/, async (msg) => {
+  const chatId = msg.chat.id;
+
+  if (!lastInsertedRow) {
+    bot.sendMessage(chatId, '❌ Belum ada data buat di-undo');
+    return;
+  }
+
+  try {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `Spending Tracker!A${lastInsertedRow}:M${lastInsertedRow}`,
+    });
+
+    bot.sendMessage(chatId, '↩️ Last input berhasil dihapus');
+
+    lastInsertedRow = null;
+
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(chatId, '❌ Gagal undo');
+  }
+});
+
+// ===== EDIT =====
+bot.onText(/\/edit (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const text = match[1];
+
+  if (!lastInsertedRow) {
+    bot.sendMessage(chatId, '❌ Ga ada data buat diedit');
+    return;
+  }
+
+  try {
+    const data = parseExpense(text);
+
+    if (data.error) {
+      bot.sendMessage(chatId, '❌ ' + data.error);
+      return;
+    }
+
+    await insertOrUpdateRow(lastInsertedRow, data);
+
+    bot.sendMessage(chatId,
+`✏️ Updated!
+
+📝 ${capitalize(data.item)}
+💰 ${data.amount} ${data.currency}
+💳 Dibayar: ${capitalize(data.paidBy)}
+👥 Split: ${data.splitTo.join(', ')}`
+    );
+
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(chatId, '❌ Gagal edit');
+  }
+});

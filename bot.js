@@ -6,21 +6,19 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ===== GOOGLE AUTH =====
-if (!process.env.GOOGLE_CREDENTIALS_BASE64) {
-  throw new Error("GOOGLE_CREDENTIALS_BASE64 belum diset");
-}
+// ===== GOOGLE AUTH (BASE64) =====
+const credentials = JSON.parse(
+  Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString()
+);
 
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(
-    Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString()
-  ),
+  credentials,
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
 const sheets = google.sheets({ version: 'v4', auth });
 
-// ===== START =====
+// ===== START (FORMAT LO — KEEP) =====
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(msg.chat.id, `🏔️ Central Asia Expense Bot
 
@@ -38,7 +36,32 @@ Kirim expense ke sini, otomatis masuk Google Sheets!
 👥 Orang: putri, ayu a, kyne, ayu`);
 });
 
-// ===== PARSER =====
+// ===== HELPERS =====
+
+// mapping dropdown EXACT
+function normalizePayer(name) {
+  const n = name.toLowerCase();
+
+  if (n.includes('putri')) return 'Putri🐬';
+  if (n.includes('kyne')) return 'Kyne🍊';
+  if (n.includes('ayu a')) return 'Ayu A🌸';
+  if (n.includes('ayu')) return 'Ayu🌿';
+
+  return 'Putri🐬';
+}
+
+// convert currency
+function convertToIDR(amount, currency) {
+  if (currency === 'USD') return Math.round(amount * 15500);
+  return amount;
+}
+
+// format date (BIAR SAMA KAYAK MANUAL)
+function getFormattedDate() {
+  return new Date().toLocaleDateString('en-GB');
+}
+
+// ===== PARSER (FORMAT LO — KEEP) =====
 function parseExpense(text) {
   text = text.toLowerCase().trim();
 
@@ -54,7 +77,6 @@ function parseExpense(text) {
   const amount = parseFloat(words[words.length - 3]);
   const currency = words[words.length - 2].toUpperCase();
   const paidBy = words[words.length - 1];
-
   const item = words.slice(0, words.length - 3).join(' ');
 
   let splitTo = [];
@@ -65,17 +87,6 @@ function parseExpense(text) {
   }
 
   return { item, amount, currency, paidBy, splitTo };
-}
-
-// ===== GET NEXT ROW (FIX UTAMA) =====
-async function getNextRow() {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: 'Spending Tracker!A:A',
-  });
-
-  const rows = res.data.values || [];
-  return rows.length + 1;
 }
 
 // ===== MAIN =====
@@ -93,35 +104,54 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    const nextRow = await getNextRow();
+    const date = getFormattedDate();
+    const amountIDR = convertToIDR(data.amount, data.currency);
+    const paidBy = normalizePayer(data.paidBy);
+
+    // split mapping
+    const splitPutri = data.splitTo.includes('putri');
+    const splitAyuA = data.splitTo.includes('ayu a');
+    const splitKyne = data.splitTo.includes('kyne');
+    const splitAyu = data.splitTo.includes('ayu');
+
+    // ===== FIX ROW POSITION =====
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Spending Tracker!A:A',
+    });
+
+    const nextRow = (res.data.values || []).length + 1;
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `Spending Tracker!A${nextRow}:K${nextRow}`,
+      range: `Spending Tracker!A${nextRow}:M${nextRow}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [[
-          new Date(),
+          date,
           data.item,
           data.amount,
           data.currency,
+          amountIDR,
+          paidBy,
+          splitPutri,
+          splitAyuA,
+          splitKyne,
+          splitAyu,
           '',
-          data.paidBy,
-          data.splitTo.includes('putri'),
-          data.splitTo.includes('ayu a'),
-          data.splitTo.includes('kyne'),
-          data.splitTo.includes('ayu'),
+          '',
           false
         ]]
       }
     });
 
+    // ===== RESPONSE (FORMAT LO — KEEP) =====
     bot.sendMessage(chatId,
 `✅ Tercatat!
 
-📝 ${data.item}
+📝 ${capitalize(data.item)}
 💰 ${data.amount} ${data.currency}
-💳 Dibayar: ${data.paidBy}
+💳 Dibayar: ${capitalize(data.paidBy)}
 👥 Split: ${data.splitTo.join(', ')}`
     );
 
@@ -130,3 +160,8 @@ bot.on('message', async (msg) => {
     bot.sendMessage(chatId, '❌ Error: ' + err.message);
   }
 });
+
+// ===== HELPER =====
+function capitalize(str) {
+  return str.replace(/\b\w/g, l => l.toUpperCase());
+}

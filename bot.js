@@ -1,4 +1,4 @@
-const TelegramBot = require('node-telegram-bot-api');
+kconst TelegramBot = require('node-telegram-bot-api');
 const { google } = require('googleapis');
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
@@ -6,7 +6,7 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ===== GOOGLE AUTH (BASE64) =====
+// ===== GOOGLE AUTH =====
 if (!process.env.GOOGLE_CREDENTIALS_BASE64) {
   throw new Error("GOOGLE_CREDENTIALS_BASE64 belum diset");
 }
@@ -67,6 +67,17 @@ function parseExpense(text) {
   return { item, amount, currency, paidBy, splitTo };
 }
 
+// ===== GET NEXT ROW (FIX UTAMA) =====
+async function getNextRow() {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'Spending Tracker!A:A',
+  });
+
+  const rows = res.data.values || [];
+  return rows.length + 1;
+}
+
 // ===== MAIN =====
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
@@ -82,11 +93,12 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    await sheets.spreadsheets.values.append({
+    const nextRow = await getNextRow();
+
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Spending Tracker!A:J', // ✅ FIX biar ga lompat bawah
+      range: `Spending Tracker!A${nextRow}:K${nextRow}`,
       valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
       requestBody: {
         values: [[
           new Date(),
@@ -94,7 +106,7 @@ bot.on('message', async (msg) => {
           data.amount,
           data.currency,
           '',
-          data.paidBy, // ✅ FIX dropdown (no capitalize)
+          data.paidBy,
           data.splitTo.includes('putri'),
           data.splitTo.includes('ayu a'),
           data.splitTo.includes('kyne'),

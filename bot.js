@@ -1,4 +1,3 @@
-console.log("ENV CHECK:", process.env.GOOGLE_CREDENTIALS ? "ADA" : "KOSONG");
 const TelegramBot = require('node-telegram-bot-api');
 const { google } = require('googleapis');
 
@@ -7,9 +6,15 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ===== GOOGLE SHEETS AUTH (FIX RAILWAY) =====
+// ===== GOOGLE SHEETS AUTH (FIX BASE64) =====
+if (!process.env.GOOGLE_CREDENTIALS_BASE64) {
+  throw new Error("GOOGLE_CREDENTIALS_BASE64 belum diset");
+}
+
 const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
+  credentials: JSON.parse(
+    Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString()
+  ),
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
@@ -43,11 +48,11 @@ function parseExpense(text) {
 
   const parts = text.split(' split ');
   if (parts.length !== 2) {
-    return { error: 'Format salah. Contoh: makan 10000 idr putri split all' };
+    return { error: 'Tambahin "split". Contoh: makan 10 usd putri split all' };
   }
 
   const before = parts[0];
-  const splitPart = parts[1];
+  const after = parts[1];
 
   const words = before.split(' ');
   const amount = parseFloat(words[words.length - 3]);
@@ -57,10 +62,10 @@ function parseExpense(text) {
   const item = words.slice(0, words.length - 3).join(' ');
 
   let splitTo = [];
-  if (splitPart === 'all' || splitPart === 'semua') {
+  if (after === 'all' || after === 'semua') {
     splitTo = ['putri', 'ayu a', 'kyne', 'ayu'];
   } else {
-    splitTo = splitPart.split(',').map(x => x.trim());
+    splitTo = after.split(',').map(x => x.trim());
   }
 
   return { item, amount, currency, paidBy, splitTo };
@@ -81,7 +86,6 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    // ===== INSERT TO SHEET =====
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Spending Tracker!A3',
@@ -89,7 +93,7 @@ bot.on('message', async (msg) => {
       requestBody: {
         values: [[
           new Date(),
-          data.item,
+          capitalize(data.item),
           data.amount,
           data.currency,
           '',
@@ -103,7 +107,6 @@ bot.on('message', async (msg) => {
       }
     });
 
-    // ===== RESPONSE =====
     bot.sendMessage(chatId,
 `✅ Tercatat!
 
@@ -114,6 +117,7 @@ bot.on('message', async (msg) => {
     );
 
   } catch (err) {
+    console.error(err);
     bot.sendMessage(chatId, '❌ Error: ' + err.message);
   }
 });

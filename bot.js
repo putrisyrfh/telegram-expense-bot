@@ -178,9 +178,31 @@ bot.onText(/\/undo/, async (msg) => {
   }
 
   try {
-    await sheets.spreadsheets.values.clear({
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `Spending Tracker!A${lastInsertedRow}:M${lastInsertedRow}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[
+          '',  // date
+          '',  // item
+          '',  // price
+          '',  // currency
+
+          null, // amount IDR (biar formula balik)
+
+          '',  // paid by
+
+          false, // putri
+          false, // ayu a
+          false, // kyne
+          false, // ayu
+
+          null, // amount per person (formula balik)
+          '',   // category
+          false // settled
+        ]]
+      }
     });
 
     bot.sendMessage(chatId, '↩️ Last input berhasil dihapus');

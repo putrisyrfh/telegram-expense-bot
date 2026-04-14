@@ -6,7 +6,7 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ===== GOOGLE SHEETS AUTH (FIX BASE64) =====
+// ===== GOOGLE AUTH (BASE64) =====
 if (!process.env.GOOGLE_CREDENTIALS_BASE64) {
   throw new Error("GOOGLE_CREDENTIALS_BASE64 belum diset");
 }
@@ -20,11 +20,9 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: 'v4', auth });
 
-// ===== START COMMAND =====
+// ===== START =====
 bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-
-  const text = `🏔️ Central Asia Expense Bot
+  bot.sendMessage(msg.chat.id, `🏔️ Central Asia Expense Bot
 
 Kirim expense ke sini, otomatis masuk Google Sheets!
 
@@ -37,9 +35,7 @@ Kirim expense ke sini, otomatis masuk Google Sheets!
 • hotel 500000 idr ayu a split semua
 
 💱 Currency: IDR, USD, EUR, KZT, KGS, UZS
-👥 Orang: putri, ayu a, kyne, ayu`;
-
-  bot.sendMessage(chatId, text);
+👥 Orang: putri, ayu a, kyne, ayu`);
 });
 
 // ===== PARSER =====
@@ -71,7 +67,7 @@ function parseExpense(text) {
   return { item, amount, currency, paidBy, splitTo };
 }
 
-// ===== MAIN HANDLER =====
+// ===== MAIN =====
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
@@ -88,16 +84,17 @@ bot.on('message', async (msg) => {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Spending Tracker!A3',
+      range: 'Spending Tracker!A:J', // ✅ FIX biar ga lompat bawah
       valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
       requestBody: {
         values: [[
           new Date(),
-          capitalize(data.item),
+          data.item,
           data.amount,
           data.currency,
           '',
-          capitalize(data.paidBy),
+          data.paidBy, // ✅ FIX dropdown (no capitalize)
           data.splitTo.includes('putri'),
           data.splitTo.includes('ayu a'),
           data.splitTo.includes('kyne'),
@@ -110,9 +107,9 @@ bot.on('message', async (msg) => {
     bot.sendMessage(chatId,
 `✅ Tercatat!
 
-📝 ${capitalize(data.item)}
+📝 ${data.item}
 💰 ${data.amount} ${data.currency}
-💳 Dibayar: ${capitalize(data.paidBy)}
+💳 Dibayar: ${data.paidBy}
 👥 Split: ${data.splitTo.join(', ')}`
     );
 
@@ -121,8 +118,3 @@ bot.on('message', async (msg) => {
     bot.sendMessage(chatId, '❌ Error: ' + err.message);
   }
 });
-
-// ===== HELPER =====
-function capitalize(str) {
-  return str.replace(/\b\w/g, l => l.toUpperCase());
-}

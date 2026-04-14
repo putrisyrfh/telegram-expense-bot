@@ -1,3 +1,4 @@
+console.log("ENV CHECK:", process.env.GOOGLE_CREDENTIALS ? "ADA" : "KOSONG");
 const TelegramBot = require('node-telegram-bot-api');
 const { google } = require('googleapis');
 

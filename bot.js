@@ -1,4 +1,4 @@
-kconst TelegramBot = require('node-telegram-bot-api');
+const TelegramBot = require('node-telegram-bot-api');
 const { google } = require('googleapis');
 
 const TOKEN = process.env.TELEGRAM_TOKEN;

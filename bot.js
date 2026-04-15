@@ -14,7 +14,22 @@ console.log('[startup] GEMINI_API_KEY:',
     : 'MISSING');
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+async function callVisionWithRetry(parts, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await visionModel.generateContent(parts);
+    } catch (err) {
+      const msg = err.message || '';
+      const transient = msg.includes('503') || msg.includes('overload') || msg.includes('Service Unavailable') || msg.includes('429');
+      if (!transient || attempt === maxRetries) throw err;
+      const waitMs = 2000 * attempt; // 2s, 4s, 6s
+      console.log(`[retry ${attempt}] Gemini transient error, retry in ${waitMs}ms`);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+}
 
 // ===== GOOGLE AUTH =====
 const credentials = JSON.parse(
@@ -309,7 +324,7 @@ Aturan:
 - Field yg ga ada di struk, isi 0
 - Currency default "IDR" kalo ga ketahuan`;
 
-  const result = await visionModel.generateContent([
+  const result = await callVisionWithRetry([
     { inlineData: { mimeType, data: imageBuffer.toString('base64') } },
     prompt
   ]);

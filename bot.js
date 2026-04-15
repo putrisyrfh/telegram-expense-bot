@@ -8,8 +8,13 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+console.log('[startup] GEMINI_API_KEY:',
+  GEMINI_API_KEY
+    ? `SET (len=${GEMINI_API_KEY.length}, prefix=${GEMINI_API_KEY.slice(0, 6)}..., suffix=...${GEMINI_API_KEY.slice(-4)})`
+    : 'MISSING');
+
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 // ===== GOOGLE AUTH =====
 const credentials = JSON.parse(

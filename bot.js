@@ -131,7 +131,7 @@ let categoryMap = {
 };
 
 function toSheetCategory(logicalKey) {
-  return categoryMap[logicalKey] || '';
+  return categoryMap[logicalKey] || 'Food';
 }
 
 // guessCategory → logical key ('food', 'flight', dst) atau ''
@@ -181,7 +181,7 @@ async function insertOrUpdateRow(rowNumber, data) {
         splitAyu,
 
         null,                      // Amount per person → formula
-        data.category || '',       // Category (auto-guess atau manual)
+        data.category || 'Food',       // Category (auto-guess atau manual)
         false                      // Settled
       ]]
     }
@@ -212,7 +212,8 @@ bot.on('message', async (msg) => {
     const nextRow = (res.data.values || []).length + 1;
     lastInsertedRow = nextRow;
 
-    data.category = toSheetCategory(guessCategory(data.item));
+    const guessed = guessCategory(data.item) || 'food';
+    data.category = toSheetCategory(guessed);
     await insertOrUpdateRow(nextRow, data);
 
     bot.sendMessage(chatId,
@@ -301,7 +302,8 @@ bot.onText(/\/edit (.+)/, async (msg, match) => {
       return;
     }
 
-    data.category = toSheetCategory(guessCategory(data.item));
+    const guessed = guessCategory(data.item) || 'food';
+    data.category = toSheetCategory(guessed);
     await insertOrUpdateRow(lastInsertedRow, data);
 
     bot.sendMessage(chatId,
@@ -654,7 +656,10 @@ bot.on('photo', async (msg) => {
 
     session.items = (parsed.items || []).map(it => {
       const geminiKey = String(it.category || '').trim().toLowerCase();
-      const logical = categoryMap[geminiKey] ? geminiKey : (guessCategory(it.name) || 'food');
+const logical =
+  categoryMap.hasOwnProperty(geminiKey)
+    ? geminiKey
+    : (guessCategory(it.name) || 'food');
       return {
         name: String(it.name || 'Item').trim(),
         price: Number(it.price) || 0,

@@ -131,35 +131,46 @@ let categoryMap = {
 
 async function loadCategoryDropdown() {
   try {
+    // Fetch wide range, dengan full data validation metadata
     const res = await sheets.spreadsheets.get({
       spreadsheetId: SPREADSHEET_ID,
-      ranges: ['Spending Tracker!L2:L50'],
-      includeGridData: true,
-      fields: 'sheets.data.rowData.values.dataValidation'
+      ranges: ['Spending Tracker!L1:L1000'],
+      includeGridData: true
     });
     const rows = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
+
     let values = null;
-    for (const row of rows) {
-      const dv = row.values?.[0]?.dataValidation;
+    let foundAtRow = -1;
+    for (let i = 0; i < rows.length; i++) {
+      const dv = rows[i]?.values?.[0]?.dataValidation;
       if (dv?.condition?.values?.length) {
         values = dv.condition.values;
+        foundAtRow = i + 1;
         break;
       }
     }
+
     if (!values) {
-      console.log('[startup] No dropdown validation found on col L — pakai default');
+      // Log all unique cell values on col L sbg debug — biar tau sheet punya apa
+      const seen = new Set();
+      for (const row of rows) {
+        const v = row?.values?.[0]?.formattedValue;
+        if (v && !seen.has(v)) { seen.add(v); }
+      }
+      console.log('[startup] No dropdown validation found on col L. Unique values sampled:', [...seen]);
+      console.log('[startup] Pakai default hardcoded map:', Object.values(categoryMap));
       return;
     }
+
     const map = {};
     for (const v of values) {
       const raw = v.userEnteredValue || '';
-      // logical key = hilangin emoji/simbol di depan, trim, lowercase
       const key = raw.replace(/^[^a-zA-Z]+/, '').trim().toLowerCase();
       if (key) map[key] = raw;
     }
     if (Object.keys(map).length > 0) {
       categoryMap = map;
-      console.log('[startup] Category dropdown loaded:', Object.values(map));
+      console.log(`[startup] Category dropdown loaded from row ${foundAtRow}:`, Object.values(map));
     }
   } catch (e) {
     console.error('[startup] category load err:', e.message, '— pakai default');

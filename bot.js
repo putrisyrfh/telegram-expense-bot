@@ -249,3 +249,180 @@ bot.onText(/\/edit (.+)/, async (msg, match) => {
     bot.sendMessage(chatId, '❌ Gagal edit');
   }
 });
+
+// ===== RECEIPT MODE (ADD-ON) =====
+const Tesseract = require('tesseract.js');
+
+let receiptSessions = {};
+
+// START RECEIPT
+bot.onText(/\/receipt/, (msg) => {
+  const chatId = msg.chat.id;
+
+  receiptSessions[chatId] = {
+    step: 'waiting_image',
+    items: [],
+    assignments: {}
+  };
+
+  bot.sendMessage(chatId, '📸 Kirim foto struk ya');
+});
+
+
+// HANDLE IMAGE
+bot.on('photo', async (msg) => {
+  const chatId = msg.chat.id;
+
+  if (!receiptSessions[chatId]) return;
+
+  const fileId = msg.photo[msg.photo.length - 1].file_id;
+
+  const fileLink = await bot.getFileLink(fileId);
+
+  bot.sendMessage(chatId, '⏳ Lagi baca struk...');
+
+  try {
+    const result = await Tesseract.recognize(fileLink, 'eng');
+    const text = result.data.text;
+
+    // PARSE SIMPLE (ITEM + PRICE)
+    const lines = text.split('\n').filter(l => l.trim());
+
+    const items = [];
+
+    lines.forEach(line => {
+      const match = line.match(/(.+)\s+(\d+[.,]?\d*)$/);
+      if (match) {
+        items.push({
+          name: match[1].trim(),
+          price: parseInt(match[2].replace(/[^0-9]/g, ''))
+        });
+      }
+    });
+
+    receiptSessions[chatId].items = items;
+
+    let reply = '🧾 Gue baca ini (cek ya):\n\n';
+
+    items.forEach((item, i) => {
+      reply += `${i + 1}. ${item.name} - ${item.price}\n`;
+    });
+
+    reply += `
+    
+Reply:
+edit 1 nasi goreng 30000
+delete 2
+1 putri
+done
+`;
+
+    receiptSessions[chatId].step = 'editing';
+
+    bot.sendMessage(chatId, reply);
+
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(chatId, '❌ Gagal baca struk');
+  }
+});
+
+
+// HANDLE RECEIPT TEXT COMMAND
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  if (!receiptSessions[chatId]) return;
+  if (!text || text.startsWith('/')) return;
+
+  const session = receiptSessions[chatId];
+
+  // EDIT
+  if (text.startsWith('edit')) {
+    const parts = text.split(' ');
+    const index = parseInt(parts[1]) - 1;
+
+    const newName = parts.slice(2, -1).join(' ');
+    const newPrice = parseInt(parts[parts.length - 1]);
+
+    if (session.items[index]) {
+      session.items[index] = { name: newName, price: newPrice };
+      bot.sendMessage(chatId, `✏️ Item ${index + 1} diupdate`);
+    }
+
+    return;
+  }
+
+  // DELETE
+  if (text.startsWith('delete')) {
+    const index = parseInt(text.split(' ')[1]) - 1;
+
+    session.items.splice(index, 1);
+
+    bot.sendMessage(chatId, '🗑️ Item dihapus');
+    return;
+  }
+
+  // DONE → INSERT TO SHEET
+  if (text === 'done') {
+    const date = getFormattedDate();
+
+    for (let i = 0; i < session.items.length; i++) {
+      const item = session.items[i];
+      const assigned = session.assignments[i] || ['putri'];
+
+      const splitPutri = assigned.includes('putri');
+      const splitAyuA = assigned.includes('ayu a');
+      const splitKyne = assigned.includes('kyne');
+      const splitAyu = assigned.includes('ayu');
+
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'Spending Tracker!A:A',
+      });
+
+      const nextRow = (res.data.values || []).length + 1;
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `Spending Tracker!A${nextRow}:M${nextRow}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [[
+            date,
+            item.name,
+            item.price,
+            'IDR',
+            '',
+            normalizePayer('putri'),
+            splitPutri,
+            splitAyuA,
+            splitKyne,
+            splitAyu,
+            '',
+            '',
+            false
+          ]]
+        }
+      });
+    }
+
+    bot.sendMessage(chatId, '✅ Semua item berhasil masuk!');
+
+    delete receiptSessions[chatId];
+    return;
+  }
+
+  // ASSIGN (ex: "1 putri")
+  const match = text.match(/^(\d+)\s+(.+)/);
+  if (match) {
+    const index = parseInt(match[1]) - 1;
+    const people = match[2].split(',').map(x => x.trim());
+
+    session.assignments[index] = people;
+
+    bot.sendMessage(chatId, `👥 Item ${index + 1} di-assign`);
+    return;
+  }
+});

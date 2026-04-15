@@ -121,17 +121,17 @@ function capitalize(str) {
 // Emoji yg keliatan di chip itu cuma visual styling, bukan bagian dari value.
 // Exact case matters (case-sensitive match sama dropdown).
 let categoryMap = {
-  tour:          'Tour',
-  food:          'Food',
-  transport:     'Transport',
-  accommodation: 'Accommodation',
-  flight:        'Flight',
-  gift:          'Gift',
-  'e-visa':      'e-Visa'
+  tour:          '🏔️ Tour',
+  food:          '🥘 Food',
+  transport:     '🚕 Transport',
+  accommodation: '🏕️ Accommodation',
+  flight:        '✈️ Flight',
+  gift:          '🎁 Gift',
+  'e-visa':      '📄 e-Visa'
 };
 
 function toSheetCategory(logicalKey) {
-  return categoryMap[logicalKey] || 'Food';
+  return categoryMap[logicalKey] || categoryMap.food;
 }
 
 // guessCategory → logical key ('food', 'flight', dst) atau ''
@@ -181,7 +181,7 @@ async function insertOrUpdateRow(rowNumber, data) {
         splitAyu,
 
         null,                      // Amount per person → formula
-        data.category || 'Food',       // Category (auto-guess atau manual)
+        data.category || categoryMap.food,       // Category (auto-guess atau manual)
         false                      // Settled
       ]]
     }

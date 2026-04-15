@@ -14,7 +14,7 @@ console.log('[startup] GEMINI_API_KEY:',
     : 'MISSING');
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
 async function callVisionWithRetry(parts, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {

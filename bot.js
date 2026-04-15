@@ -130,59 +130,8 @@ let categoryMap = {
   'e-visa':      'e-Visa'
 };
 
-async function loadCategoryDropdown() {
-  try {
-    // Fetch wide range, dengan full data validation metadata
-    const res = await sheets.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
-      ranges: ['Spending Tracker!L1:L1000'],
-      includeGridData: true
-    });
-    const rows = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
-
-    let values = null;
-    let foundAtRow = -1;
-    for (let i = 0; i < rows.length; i++) {
-      const dv = rows[i]?.values?.[0]?.dataValidation;
-      if (dv?.condition?.values?.length) {
-        values = dv.condition.values;
-        foundAtRow = i + 1;
-        break;
-      }
-    }
-
-    if (!values) {
-      // Log all unique cell values on col L sbg debug — biar tau sheet punya apa
-      const seen = new Set();
-      for (const row of rows) {
-        const v = row?.values?.[0]?.formattedValue;
-        if (v && !seen.has(v)) { seen.add(v); }
-      }
-      console.log('[startup] No dropdown validation found on col L. Unique values sampled:', [...seen]);
-      console.log('[startup] Pakai default hardcoded map:', Object.values(categoryMap));
-      return;
-    }
-
-    const map = {};
-    for (const v of values) {
-      const raw = v.userEnteredValue || '';
-      const key = raw.replace(/^[^a-zA-Z]+/, '').trim().toLowerCase();
-      if (key) map[key] = raw;
-    }
-    if (Object.keys(map).length > 0) {
-      categoryMap = map;
-      console.log(`[startup] Category dropdown loaded from row ${foundAtRow}:`, Object.values(map));
-    }
-  } catch (e) {
-    console.error('[startup] category load err:', e.message, '— pakai default');
-  }
-}
-loadCategoryDropdown();
-
 function toSheetCategory(logicalKey) {
-  const v = categoryMap[logicalKey] || '';
-  console.log(`[cat] key="${logicalKey}" → sheet value="${v}" (len=${v.length}, codepoints=${[...v].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase()).join(',')})`);
-  return v;
+  return categoryMap[logicalKey] || '';
 }
 
 // guessCategory → logical key ('food', 'flight', dst) atau ''

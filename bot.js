@@ -117,16 +117,17 @@ function capitalize(str) {
 }
 
 // ===== CATEGORIES =====
-// categoryMap: logical key (lowercase, e.g. 'food') -> exact sheet dropdown value (e.g. '🍲 Food')
-// Diisi di startup dari data validation sheet. Fallback default kalo fetch gagal.
+// Kolom L pake smart chip dropdown — value di cell PLAIN TEXT tanpa emoji.
+// Emoji yg keliatan di chip itu cuma visual styling, bukan bagian dari value.
+// Exact case matters (case-sensitive match sama dropdown).
 let categoryMap = {
-  tour:          '🏔️ Tour',
-  food:          '🍲 Food',
-  transport:     '🚙 Transport',
-  accommodation: '⛺ Accommodation',
-  flight:        '✈️ Flight',
-  gift:          '🎁 Gift',
-  'e-visa':      '📜 e-Visa'
+  tour:          'Tour',
+  food:          'Food',
+  transport:     'Transport',
+  accommodation: 'Accommodation',
+  flight:        'Flight',
+  gift:          'Gift',
+  'e-visa':      'e-Visa'
 };
 
 async function loadCategoryDropdown() {

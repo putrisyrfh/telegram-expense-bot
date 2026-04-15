@@ -1,4 +1,3 @@
-
 const TelegramBot = require('node-telegram-bot-api');
 const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -103,33 +102,14 @@ function parseExpense(text) {
   const paidBy = words[words.length - 1];
   const item = words.slice(0, words.length - 3).join(' ');
 
-  const isOwnSplit =
-  after.includes('own') ||
-  after.includes('sendiri');
-
-let splitTo = [];
-let payers = [];
-
-if (isOwnSplit) {
-  payers = after
-    .replace('own', '')
-    .replace('sendiri', '')
-    .split(',')
-    .map(x => x.trim())
-    .filter(Boolean);
-
-  splitTo = payers;
-} else {
+  let splitTo = [];
   if (after === 'all' || after === 'semua') {
     splitTo = ['putri', 'ayu a', 'kyne', 'ayu'];
   } else {
     splitTo = after.split(',').map(x => x.trim());
   }
 
-  payers = [paidBy];
-}
-
-return { item, amount, currency, paidBy, splitTo, payers, isOwnSplit };
+  return { item, amount, currency, paidBy, splitTo };
 }
 
 function capitalize(str) {
@@ -229,56 +209,22 @@ bot.on('message', async (msg) => {
       range: 'Spending Tracker!A:A',
     });
 
+    const nextRow = (res.data.values || []).length + 1;
+    lastInsertedRow = nextRow;
+
     const guessed = guessCategory(data.item) || 'food';
-data.category = toSheetCategory(guessed);
+    data.category = toSheetCategory(guessed);
+    await insertOrUpdateRow(nextRow, data);
 
-if (data.isOwnSplit) {
-  let firstRow = null;
-  let lastRow = null;
-
-  for (const person of data.payers) {
-    const resLoop = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Spending Tracker!A:A',
-    });
-
-    const row = (resLoop.data.values || []).length + 1;
-
-    if (!firstRow) firstRow = row;
-    lastRow = row;
-
-    await insertOrUpdateRow(row, {
-      ...data,
-      paidBy: person,
-      splitTo: [person]
-    });
-  }
-
-  lastReceiptRows = [firstRow, lastRow]; // biar bisa undo multiple
-  lastInsertedRow = null;
-
-} else {
-  const nextRow = (res.data.values || []).length + 1;
-  lastInsertedRow = nextRow;
-
-  await insertOrUpdateRow(nextRow, data);
-}
-
- const payerText = data.isOwnSplit
-  ? data.payers.map(capitalize).join(', ')
-  : capitalize(data.paidBy);
-
-bot.sendMessage(chatId,
+    bot.sendMessage(chatId,
 `✅ Tercatat!
 
 📝 ${capitalize(data.item)}
 💰 ${data.amount} ${data.currency}
-💳 Dibayar: ${payerText}
-👥 Split: ${data.isOwnSplit
-  ? 'Own — ' + data.splitTo.map(capitalize).join(', ')
-  : data.splitTo.map(capitalize).join(', ')
-}`
+💳 Dibayar: ${capitalize(data.paidBy)}
+👥 Split: ${data.splitTo.join(', ')}`
     );
+
   } catch (err) {
     console.error(err);
     bot.sendMessage(chatId, '❌ Error: ' + err.message);
@@ -360,15 +306,12 @@ bot.onText(/\/edit (.+)/, async (msg, match) => {
     data.category = toSheetCategory(guessed);
     await insertOrUpdateRow(lastInsertedRow, data);
 
-const payerText = data.isOwnSplit
-  ? data.payers.map(capitalize).join(', ')
-  : capitalize(data.paidBy);
     bot.sendMessage(chatId,
 `✏️ Updated!
 
 📝 ${capitalize(data.item)}
 💰 ${data.amount} ${data.currency}
-💳 Dibayar: ${payerText}
+💳 Dibayar: ${capitalize(data.paidBy)}
 👥 Split: ${data.splitTo.join(', ')}`
     );
 
@@ -791,8 +734,8 @@ bot.on('message', async (msg) => {
     session.editMessageId = null; // resend biar ke posisi terbaru
     await renderScreen(chatId, session);
   } catch (err) {
-  console.error(err);
-  bot.sendMessage(chatId, '❌ Error: ' + err.message);
+    console.error(err);
+    bot.sendMessage(chatId, '❌ Error: ' + err.message);
   }
 });
 

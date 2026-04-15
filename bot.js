@@ -116,43 +116,75 @@ function capitalize(str) {
   return str.replace(/\b\w/g, l => l.toUpperCase());
 }
 
-// ===== CATEGORIES (EXACT SHEET DROPDOWN VALUES) =====
-const CAT_TOUR         = '🏔️ Tour';
-const CAT_FOOD         = '🍲 Food';
-const CAT_TRANSPORT    = '🚙 Transport';
-const CAT_ACCOMODATION = '⛺ Accomodation';
-const CAT_FLIGHT       = '✈️ Flight';
-const CAT_GIFT         = '🎁 Gift';
-const CAT_EVISA        = '📜 e-Visa';
-const ALL_CATEGORIES = [CAT_TOUR, CAT_FOOD, CAT_TRANSPORT, CAT_ACCOMODATION, CAT_FLIGHT, CAT_GIFT, CAT_EVISA];
+// ===== CATEGORIES =====
+// categoryMap: logical key (lowercase, e.g. 'food') -> exact sheet dropdown value (e.g. '🍲 Food')
+// Diisi di startup dari data validation sheet. Fallback default kalo fetch gagal.
+let categoryMap = {
+  tour:          '🏔️ Tour',
+  food:          '🍲 Food',
+  transport:     '🚙 Transport',
+  accommodation: '⛺ Accommodation',
+  flight:        '✈️ Flight',
+  gift:          '🎁 Gift',
+  'e-visa':      '📜 e-Visa'
+};
 
-// Order matters: cek yg paling spesifik dulu
+async function loadCategoryDropdown() {
+  try {
+    const res = await sheets.spreadsheets.get({
+      spreadsheetId: SPREADSHEET_ID,
+      ranges: ['Spending Tracker!L2:L50'],
+      includeGridData: true,
+      fields: 'sheets.data.rowData.values.dataValidation'
+    });
+    const rows = res.data.sheets?.[0]?.data?.[0]?.rowData || [];
+    let values = null;
+    for (const row of rows) {
+      const dv = row.values?.[0]?.dataValidation;
+      if (dv?.condition?.values?.length) {
+        values = dv.condition.values;
+        break;
+      }
+    }
+    if (!values) {
+      console.log('[startup] No dropdown validation found on col L — pakai default');
+      return;
+    }
+    const map = {};
+    for (const v of values) {
+      const raw = v.userEnteredValue || '';
+      // logical key = hilangin emoji/simbol di depan, trim, lowercase
+      const key = raw.replace(/^[^a-zA-Z]+/, '').trim().toLowerCase();
+      if (key) map[key] = raw;
+    }
+    if (Object.keys(map).length > 0) {
+      categoryMap = map;
+      console.log('[startup] Category dropdown loaded:', Object.values(map));
+    }
+  } catch (e) {
+    console.error('[startup] category load err:', e.message, '— pakai default');
+  }
+}
+loadCategoryDropdown();
+
+function toSheetCategory(logicalKey) {
+  return categoryMap[logicalKey] || '';
+}
+
+// guessCategory → logical key ('food', 'flight', dst) atau ''
 function guessCategory(itemName) {
   const n = (itemName || '').toLowerCase();
   if (!n) return '';
 
-  // e-Visa
-  if (/\b(visa|evisa|e[- ]?visa)\b/.test(n)) return CAT_EVISA;
+  if (/\b(visa|evisa|e[- ]?visa)\b/.test(n)) return 'e-visa';
+  if (/\b(flight|pesawat|airlines?|garuda|lion ?air|batik|scoot|airasia|qatar|emirates|turkish|aeroflot|airport|bandara|boarding)\b/.test(n)) return 'flight';
+  if (/\b(hotel|hostel|airbnb|guesthouse|lodge|motel|homestay|dorm|booking|accom|losmen|inap|apart(ment|emen)|resort|yurt)\b/.test(n)) return 'accommodation';
+  if (/\b(taxi|taksi|gojek|grab|uber|bolt|yandex|bus|kereta|train|tram|metro|subway|mrt|parkir|toll|bensin|fuel|bbm|transport|shuttle|transfer|rental|ojek|marshrutka)\b/.test(n)) return 'transport';
+  if (/\b(gift|hadiah|souvenir|oleh[- ]?oleh|kado|cinderamata)\b/.test(n)) return 'gift';
+  if (/\b(tour|tur|guide|museum|entrance|entry|tiket masuk|wisata|sightseeing|trek|trekking|hike|hiking|attraction|activity)\b/.test(n)) return 'tour';
+  if (/\b(makan|nasi|mie|mi|bakso|soto|ayam|bakar|goreng|bubur|roti|kue|dessert|kopi|coffee|teh|tea|juice|jus|susu|air|water|es|ice|drink|minum|breakfast|lunch|dinner|snack|cemilan|cafe|resto|restaurant|warung|sate|pasta|pizza|burger|kfc|mcd|starbucks|cake|cookies|pancake|waffle|sushi|ramen|dumpling|dimsum|steak|salad|sandwich|plov|shashlik|lagman|manti|samsa|beshbarmak|kurt)\b/.test(n)) return 'food';
 
-  // Flight
-  if (/\b(flight|pesawat|airlines?|garuda|lion ?air|batik|scoot|airasia|qatar|emirates|turkish|aeroflot|airport|bandara|boarding)\b/.test(n)) return CAT_FLIGHT;
-
-  // Accomodation
-  if (/\b(hotel|hostel|airbnb|guesthouse|lodge|motel|homestay|dorm|booking|accom|losmen|inap|apart(ment|emen)|resort|yurt)\b/.test(n)) return CAT_ACCOMODATION;
-
-  // Transport
-  if (/\b(taxi|taksi|gojek|grab|uber|bolt|yandex|bus|kereta|train|tram|metro|subway|mrt|parkir|toll|bensin|fuel|bbm|transport|shuttle|transfer|rental|ojek|marshrutka)\b/.test(n)) return CAT_TRANSPORT;
-
-  // Gift
-  if (/\b(gift|hadiah|souvenir|oleh[- ]?oleh|kado|cinderamata)\b/.test(n)) return CAT_GIFT;
-
-  // Tour (aktivitas wisata)
-  if (/\b(tour|tur|guide|museum|entrance|entry|tiket masuk|wisata|sightseeing|trek|trekking|hike|hiking|attraction|activity|yurt tour|city tour|desert tour)\b/.test(n)) return CAT_TOUR;
-
-  // Food
-  if (/\b(makan|nasi|mie|mi|bakso|soto|ayam|bakar|goreng|bubur|roti|kue|dessert|kopi|coffee|teh|tea|juice|jus|susu|air|water|es|ice|drink|minum|breakfast|lunch|dinner|snack|cemilan|cafe|resto|restaurant|warung|sate|pasta|pizza|burger|kfc|mcd|starbucks|cake|cookies|pancake|waffle|sushi|ramen|dumpling|dimsum|steak|salad|sandwich|plov|shashlik|lagman|manti|samsa|beshbarmak|kurt)\b/.test(n)) return CAT_FOOD;
-
-  return ''; // ga ketemu, biarin kosong
+  return '';
 }
 
 // ===== INSERT FUNCTION (BIAR DIPAKE ULANG) =====
@@ -217,7 +249,7 @@ bot.on('message', async (msg) => {
     const nextRow = (res.data.values || []).length + 1;
     lastInsertedRow = nextRow;
 
-    data.category = guessCategory(data.item);
+    data.category = toSheetCategory(guessCategory(data.item));
     await insertOrUpdateRow(nextRow, data);
 
     bot.sendMessage(chatId,
@@ -306,7 +338,7 @@ bot.onText(/\/edit (.+)/, async (msg, match) => {
       return;
     }
 
-    data.category = guessCategory(data.item);
+    data.category = toSheetCategory(guessCategory(data.item));
     await insertOrUpdateRow(lastInsertedRow, data);
 
     bot.sendMessage(chatId,
@@ -358,7 +390,7 @@ async function ocrReceipt(imageBuffer, mimeType) {
 Aturan:
 - name: nama item, hilangin angka qty/kode produk
 - price: harga total per item (kalo qty>1, multiply qty x harga satuan)
-- category: PERSIS salah satu dari: "🏔️ Tour", "🍲 Food", "🚙 Transport", "⛺ Accomodation", "✈️ Flight", "🎁 Gift", "📜 e-Visa". Kalo ga yakin, default "🍲 Food" (karena mayoritas struk itu F&B).
+- category: salah satu dari (lowercase): "tour", "food", "transport", "accommodation", "flight", "gift", "e-visa". Kalo ga yakin, default "food" (karena mayoritas struk itu F&B).
 - discount: nilai positif (potongan harga)
 - tax: PB1/VAT/pajak
 - service: service charge
@@ -584,7 +616,7 @@ async function saveReceiptToSheet(chatId, session) {
       it.assigned.has('kyne'),
       it.assigned.has('ayu'),
       null,
-      it.category || guessCategory(it.name) || CAT_FOOD,
+      toSheetCategory(it.categoryKey || guessCategory(it.name) || 'food'),
       false
     ];
   });
@@ -658,12 +690,12 @@ bot.on('photo', async (msg) => {
     const parsed = await ocrReceipt(buf, 'image/jpeg');
 
     session.items = (parsed.items || []).map(it => {
-      const rawCat = String(it.category || '').trim();
-      const category = ALL_CATEGORIES.includes(rawCat) ? rawCat : (guessCategory(it.name) || CAT_FOOD);
+      const geminiKey = String(it.category || '').trim().toLowerCase();
+      const logical = categoryMap[geminiKey] ? geminiKey : (guessCategory(it.name) || 'food');
       return {
         name: String(it.name || 'Item').trim(),
         price: Number(it.price) || 0,
-        category,
+        categoryKey: logical,
         assigned: new Set()
       };
     });

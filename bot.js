@@ -168,7 +168,9 @@ async function loadCategoryDropdown() {
 loadCategoryDropdown();
 
 function toSheetCategory(logicalKey) {
-  return categoryMap[logicalKey] || '';
+  const v = categoryMap[logicalKey] || '';
+  console.log(`[cat] key="${logicalKey}" → sheet value="${v}" (len=${v.length}, codepoints=${[...v].map(c => 'U+' + c.codePointAt(0).toString(16).toUpperCase()).join(',')})`);
+  return v;
 }
 
 // guessCategory → logical key ('food', 'flight', dst) atau ''

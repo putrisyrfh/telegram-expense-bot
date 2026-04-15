@@ -555,6 +555,16 @@ async function saveReceiptToSheet(chatId, session) {
 
 // ===== RECEIPT HANDLERS =====
 
+bot.onText(/\/cancel/, (msg) => {
+  const chatId = msg.chat.id;
+  if (receiptSessions[chatId]) {
+    delete receiptSessions[chatId];
+    bot.sendMessage(chatId, '❌ Receipt session dibatalkan');
+  } else {
+    bot.sendMessage(chatId, 'Ga ada session aktif');
+  }
+});
+
 bot.onText(/\/receipt/, (msg) => {
   const chatId = msg.chat.id;
   receiptSessions[chatId] = {
@@ -600,7 +610,8 @@ bot.on('photo', async (msg) => {
     await renderScreen(chatId, session);
   } catch (err) {
     console.error('OCR error:', err);
-    bot.sendMessage(chatId, '❌ Gagal baca struk: ' + err.message + '\n\nCoba kirim foto lagi (lebih jelas), atau ketik /receipt buat mulai ulang.');
+    delete receiptSessions[chatId]; // bersihin session biar main handler ga ke-block
+    bot.sendMessage(chatId, '❌ Gagal baca struk: ' + err.message + '\n\nKetik /receipt buat coba lagi.');
   }
 });
 

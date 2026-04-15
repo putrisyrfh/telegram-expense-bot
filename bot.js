@@ -116,6 +116,45 @@ function capitalize(str) {
   return str.replace(/\b\w/g, l => l.toUpperCase());
 }
 
+// ===== CATEGORIES (EXACT SHEET DROPDOWN VALUES) =====
+const CAT_TOUR         = '🏔️ Tour';
+const CAT_FOOD         = '🍲 Food';
+const CAT_TRANSPORT    = '🚙 Transport';
+const CAT_ACCOMODATION = '⛺ Accomodation';
+const CAT_FLIGHT       = '✈️ Flight';
+const CAT_GIFT         = '🎁 Gift';
+const CAT_EVISA        = '📜 e-Visa';
+const ALL_CATEGORIES = [CAT_TOUR, CAT_FOOD, CAT_TRANSPORT, CAT_ACCOMODATION, CAT_FLIGHT, CAT_GIFT, CAT_EVISA];
+
+// Order matters: cek yg paling spesifik dulu
+function guessCategory(itemName) {
+  const n = (itemName || '').toLowerCase();
+  if (!n) return '';
+
+  // e-Visa
+  if (/\b(visa|evisa|e[- ]?visa)\b/.test(n)) return CAT_EVISA;
+
+  // Flight
+  if (/\b(flight|pesawat|airlines?|garuda|lion ?air|batik|scoot|airasia|qatar|emirates|turkish|aeroflot|airport|bandara|boarding)\b/.test(n)) return CAT_FLIGHT;
+
+  // Accomodation
+  if (/\b(hotel|hostel|airbnb|guesthouse|lodge|motel|homestay|dorm|booking|accom|losmen|inap|apart(ment|emen)|resort|yurt)\b/.test(n)) return CAT_ACCOMODATION;
+
+  // Transport
+  if (/\b(taxi|taksi|gojek|grab|uber|bolt|yandex|bus|kereta|train|tram|metro|subway|mrt|parkir|toll|bensin|fuel|bbm|transport|shuttle|transfer|rental|ojek|marshrutka)\b/.test(n)) return CAT_TRANSPORT;
+
+  // Gift
+  if (/\b(gift|hadiah|souvenir|oleh[- ]?oleh|kado|cinderamata)\b/.test(n)) return CAT_GIFT;
+
+  // Tour (aktivitas wisata)
+  if (/\b(tour|tur|guide|museum|entrance|entry|tiket masuk|wisata|sightseeing|trek|trekking|hike|hiking|attraction|activity|yurt tour|city tour|desert tour)\b/.test(n)) return CAT_TOUR;
+
+  // Food
+  if (/\b(makan|nasi|mie|mi|bakso|soto|ayam|bakar|goreng|bubur|roti|kue|dessert|kopi|coffee|teh|tea|juice|jus|susu|air|water|es|ice|drink|minum|breakfast|lunch|dinner|snack|cemilan|cafe|resto|restaurant|warung|sate|pasta|pizza|burger|kfc|mcd|starbucks|cake|cookies|pancake|waffle|sushi|ramen|dumpling|dimsum|steak|salad|sandwich|plov|shashlik|lagman|manti|samsa|beshbarmak|kurt)\b/.test(n)) return CAT_FOOD;
+
+  return ''; // ga ketemu, biarin kosong
+}
+
 // ===== INSERT FUNCTION (BIAR DIPAKE ULANG) =====
 async function insertOrUpdateRow(rowNumber, data) {
   const date = getFormattedDate();
@@ -146,9 +185,9 @@ async function insertOrUpdateRow(rowNumber, data) {
         splitKyne,
         splitAyu,
 
-        null,      // Amount per person → formula
-        '',        // Category
-        false      // Settled
+        null,                      // Amount per person → formula
+        data.category || '',       // Category (auto-guess atau manual)
+        false                      // Settled
       ]]
     }
   });
@@ -178,6 +217,7 @@ bot.on('message', async (msg) => {
     const nextRow = (res.data.values || []).length + 1;
     lastInsertedRow = nextRow;
 
+    data.category = guessCategory(data.item);
     await insertOrUpdateRow(nextRow, data);
 
     bot.sendMessage(chatId,
@@ -266,6 +306,7 @@ bot.onText(/\/edit (.+)/, async (msg, match) => {
       return;
     }
 
+    data.category = guessCategory(data.item);
     await insertOrUpdateRow(lastInsertedRow, data);
 
     bot.sendMessage(chatId,
@@ -305,7 +346,7 @@ function fmtMoney(n, currency = 'IDR') {
 async function ocrReceipt(imageBuffer, mimeType) {
   const prompt = `Lo OCR struk makanan/minuman/belanja. Balikin HANYA JSON valid (no markdown, no backtick), schema:
 {
-  "items": [{"name": "string", "price": number}],
+  "items": [{"name": "string", "price": number, "category": "string"}],
   "subtotal": number,
   "discount": number,
   "tax": number,
@@ -317,6 +358,7 @@ async function ocrReceipt(imageBuffer, mimeType) {
 Aturan:
 - name: nama item, hilangin angka qty/kode produk
 - price: harga total per item (kalo qty>1, multiply qty x harga satuan)
+- category: PERSIS salah satu dari: "🏔️ Tour", "🍲 Food", "🚙 Transport", "⛺ Accomodation", "✈️ Flight", "🎁 Gift", "📜 e-Visa". Kalo ga yakin, default "🍲 Food" (karena mayoritas struk itu F&B).
 - discount: nilai positif (potongan harga)
 - tax: PB1/VAT/pajak
 - service: service charge
@@ -542,7 +584,7 @@ async function saveReceiptToSheet(chatId, session) {
       it.assigned.has('kyne'),
       it.assigned.has('ayu'),
       null,
-      '',
+      it.category || guessCategory(it.name) || CAT_FOOD,
       false
     ];
   });
@@ -615,11 +657,16 @@ bot.on('photo', async (msg) => {
 
     const parsed = await ocrReceipt(buf, 'image/jpeg');
 
-    session.items = (parsed.items || []).map(it => ({
-      name: String(it.name || 'Item').trim(),
-      price: Number(it.price) || 0,
-      assigned: new Set()
-    }));
+    session.items = (parsed.items || []).map(it => {
+      const rawCat = String(it.category || '').trim();
+      const category = ALL_CATEGORIES.includes(rawCat) ? rawCat : (guessCategory(it.name) || CAT_FOOD);
+      return {
+        name: String(it.name || 'Item').trim(),
+        price: Number(it.price) || 0,
+        category,
+        assigned: new Set()
+      };
+    });
     session.discount = Number(parsed.discount) || 0;
     session.tax = Number(parsed.tax) || 0;
     session.service = Number(parsed.service) || 0;

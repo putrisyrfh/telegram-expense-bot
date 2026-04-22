@@ -382,14 +382,14 @@ const receiptSessions = {};
 
 function fmtMoney(n, currency = 'IDR') {
   const rounded = Math.round(n);
-  if (currency === 'IDR') return 'Rp ' + rounded.toLocaleString('id-ID');
+  if (currency === 'IDR') return 'Rp ' + rounded.toLocaleString('en-US');
   return rounded.toLocaleString('en-US') + ' ' + currency;
 }
 
 async function ocrReceipt(imageBuffer, mimeType) {
   const prompt = `Lo OCR struk makanan/minuman/belanja. Balikin HANYA JSON valid (no markdown, no backtick), schema:
 {
-  "items": [{"name": "string", "price": number, "category": "string"}],
+  "items": [{"name": "string", "qty": number, "price": number, "category": "string"}],
   "subtotal": number,
   "discount": number,
   "tax": number,
@@ -400,7 +400,8 @@ async function ocrReceipt(imageBuffer, mimeType) {
 
 Aturan:
 - name: nama item, hilangin angka qty/kode produk
-- price: harga total per item (kalo qty>1, multiply qty x harga satuan)
+- qty: jumlah pesanan (default 1 kalo cuma 1)
+- price: harga TOTAL per item (kalo qty>1, itu sudah qty x harga satuan)
 - category: salah satu dari (lowercase): "tour", "food", "transport", "accommodation", "flight", "gift", "e-visa". Kalo ga yakin, default "food" (karena mayoritas struk itu F&B).
 - discount: nilai positif (potongan harga)
 - tax: PB1/VAT/pajak
@@ -428,7 +429,8 @@ function buildEditScreen(session) {
     txt += '_(Belum ada item — tap ➕ Tambah)_\n\n';
   } else {
     items.forEach((it, i) => {
-      txt += `${i + 1}. ${it.name} — ${fmtMoney(it.price, currency)}\n`;
+      const qtyLabel = it.qty > 1 ? `${it.qty}x ` : '';
+      txt += `${i + 1}. ${qtyLabel}${it.name} — ${fmtMoney(it.price, currency)}\n`;
     });
     txt += `\nSubtotal: ${fmtMoney(subtotal, currency)}\n`;
   }
@@ -479,8 +481,9 @@ function buildAssignScreen(session) {
   const total = session.items.length;
   const assigned = item.assigned;
 
+  const qtyLabel = item.qty > 1 ? `${item.qty}x ` : '';
   let txt = `👥 Assign item ${idx + 1}/${total}:\n\n`;
-  txt += `🍴 *${item.name}* — ${fmtMoney(item.price, session.currency)}\n\n`;
+  txt += `🍴 *${qtyLabel}${item.name}* — ${fmtMoney(item.price, session.currency)}\n\n`;
 
   if (assigned.size === 0) {
     txt += '_Belum dipilih siapapun. Tap nama yg makan/minum item ini._';
@@ -702,12 +705,12 @@ bot.on('photo', async (msg) => {
 
     session.items = (parsed.items || []).map(it => {
       const geminiKey = String(it.category || '').trim().toLowerCase();
-const logical =
-  categoryMap.hasOwnProperty(geminiKey)
-    ? geminiKey
-    : (guessCategory(it.name) || 'food');
+      const logical = categoryMap.hasOwnProperty(geminiKey)
+        ? geminiKey
+        : (guessCategory(it.name) || 'food');
       return {
         name: String(it.name || 'Item').trim(),
+        qty: Number(it.qty) || 1,
         price: Number(it.price) || 0,
         categoryKey: logical,
         assigned: new Set()

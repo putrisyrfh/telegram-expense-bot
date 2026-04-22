@@ -14,21 +14,28 @@ console.log('[startup] GEMINI_API_KEY:',
     : 'MISSING');
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
-async function callVisionWithRetry(parts, maxRetries = 3) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await visionModel.generateContent(parts);
-    } catch (err) {
-      const msg = err.message || '';
-      const transient = msg.includes('503') || msg.includes('overload') || msg.includes('Service Unavailable') || msg.includes('429');
-      if (!transient || attempt === maxRetries) throw err;
-      const waitMs = 2000 * attempt; // 2s, 4s, 6s
-      console.log(`[retry ${attempt}] Gemini transient error, retry in ${waitMs}ms`);
-      await new Promise(r => setTimeout(r, waitMs));
+async function callVisionWithRetry(parts, maxRetries = 2) {
+  for (const modelName of MODELS) {
+    const model = genAI.getGenerativeModel({ model: modelName });
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[gemini] trying ${modelName} (attempt ${attempt})`);
+        return await model.generateContent(parts);
+      } catch (err) {
+        const msg = err.message || '';
+        const transient = msg.includes('503') || msg.includes('overload') || msg.includes('Service Unavailable') || msg.includes('429');
+        if (!transient) throw err;
+        console.log(`[gemini] ${modelName} error: ${msg.slice(0, 80)}`);
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 2000 * attempt));
+        }
+      }
     }
+    console.log(`[gemini] ${modelName} failed, trying next model...`);
   }
+  throw new Error('Semua model Gemini lagi overload. Coba lagi nanti.');
 }
 
 // ===== GOOGLE AUTH =====

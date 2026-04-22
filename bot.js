@@ -46,6 +46,7 @@ const sheets = google.sheets({ version: 'v4', auth });
 // ===== STATE =====
 let lastInsertedRow = null;       // single-row inserts (text expense)
 let lastReceiptRows = null;       // [startRow, endRow] dari /receipt save
+const editPending = {};           // chatId -> true kalo nunggu input edit
 
 // ===== START (FORMAT LO — KEEP) =====
 bot.onText(/\/start/, (msg) => {
@@ -114,6 +115,10 @@ function parseExpense(text) {
 
 function capitalize(str) {
   return str.replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function fmtAmount(n) {
+  return Number(n).toLocaleString('en-US');
 }
 
 // ===== CATEGORIES =====
@@ -196,6 +201,37 @@ bot.on('message', async (msg) => {
   if (!text || text.startsWith('/')) return;
   if (receiptSessions[chatId]) return; // skip kalo lagi di flow /receipt
 
+  // kalo lagi nunggu input edit
+  if (editPending[chatId]) {
+    delete editPending[chatId];
+    if (!lastInsertedRow) {
+      bot.sendMessage(chatId, '❌ Ga ada data buat diedit');
+      return;
+    }
+    try {
+      const data = parseExpense(text);
+      if (data.error) {
+        bot.sendMessage(chatId, '❌ ' + data.error);
+        return;
+      }
+      const guessed = guessCategory(data.item) || 'food';
+      data.category = toSheetCategory(guessed);
+      await insertOrUpdateRow(lastInsertedRow, data);
+      bot.sendMessage(chatId,
+`✏️ Updated!
+
+📝 ${capitalize(data.item)}
+💰 ${fmtAmount(data.amount)} ${data.currency}
+💳 Dibayar: ${capitalize(data.paidBy)}
+👥 Split: ${data.splitTo.join(', ')}`
+      );
+    } catch (err) {
+      console.error(err);
+      bot.sendMessage(chatId, '❌ Gagal edit: ' + err.message);
+    }
+    return;
+  }
+
   try {
     const data = parseExpense(text);
 
@@ -220,7 +256,7 @@ bot.on('message', async (msg) => {
 `✅ Tercatat!
 
 📝 ${capitalize(data.item)}
-💰 ${data.amount} ${data.currency}
+💰 ${fmtAmount(data.amount)} ${data.currency}
 💳 Dibayar: ${capitalize(data.paidBy)}
 👥 Split: ${data.splitTo.join(', ')}`
     );
@@ -285,6 +321,16 @@ bot.onText(/\/undo/, async (msg) => {
 });
 
 // ===== EDIT =====
+bot.onText(/\/edit$/, (msg) => {
+  const chatId = msg.chat.id;
+  if (!lastInsertedRow) {
+    bot.sendMessage(chatId, '❌ Ga ada data buat diedit');
+    return;
+  }
+  editPending[chatId] = true;
+  bot.sendMessage(chatId, '✏️ Kirim ulang input expense yang bener:\n\nFormat: [item] [jumlah] [currency] [yg bayar] split [siapa]\nContoh: makan 50000 idr putri split all');
+});
+
 bot.onText(/\/edit (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const text = match[1];
@@ -310,7 +356,7 @@ bot.onText(/\/edit (.+)/, async (msg, match) => {
 `✏️ Updated!
 
 📝 ${capitalize(data.item)}
-💰 ${data.amount} ${data.currency}
+💰 ${fmtAmount(data.amount)} ${data.currency}
 💳 Dibayar: ${capitalize(data.paidBy)}
 👥 Split: ${data.splitTo.join(', ')}`
     );
